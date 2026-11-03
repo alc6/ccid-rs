@@ -1,0 +1,25 @@
+[package]
+name = "ccid"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+description = "Pure-Rust host driver for USB CCID smart-card readers (no PC/SC, no pcscd)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/alc6/ccid-rs"
+readme = "README.md"
+keywords = ["ccid", "smartcard", "nfc", "usb", "iso7816"]
+categories = ["hardware-support"]
+exclude = [".github/"]
+
+[features]
+default = []
+# Vendor commands for ACS readers (ACR1552U family), sent through PC_to_RDR_Escape.
+acs = []
+
+[dependencies]
+nusb = "0.2.9"
+thiserror = "2"
+log = "0.4"
+
+[package.metadata.docs.rs]
+all-features = true
