@@ -163,3 +163,84 @@ impl Iterator for SlotEvents {
         block_on(self.inner.next())
     }
 }
+
+#[cfg(feature = "acs")]
+impl Reader {
+    /// See [`crate::Reader::acs`]. Requires the `acs` feature.
+    pub fn acs(&mut self) -> Acs<'_> {
+        Acs {
+            inner: self.inner.acs(),
+        }
+    }
+}
+
+/// Blocking version of [`crate::acs::Acs`]. Requires the `acs` feature.
+#[cfg(feature = "acs")]
+#[derive(Debug)]
+pub struct Acs<'r> {
+    inner: crate::acs::Acs<'r>,
+}
+
+#[cfg(feature = "acs")]
+impl Acs<'_> {
+    /// See [`crate::acs::Acs::firmware_version`].
+    pub fn firmware_version(&mut self) -> Result<String> {
+        block_on(self.inner.firmware_version())
+    }
+
+    /// See [`crate::acs::Acs::serial_number`].
+    pub fn serial_number(&mut self) -> Result<String> {
+        block_on(self.inner.serial_number())
+    }
+
+    /// See [`crate::acs::Acs::beep`].
+    pub fn beep(&mut self, duration: Duration) -> Result<()> {
+        block_on(self.inner.beep(duration))
+    }
+
+    /// See [`crate::acs::Acs::leds`].
+    pub fn leds(&mut self) -> Result<crate::acs::Leds> {
+        block_on(self.inner.leds())
+    }
+
+    /// See [`crate::acs::Acs::set_leds`].
+    pub fn set_leds(&mut self, leds: crate::acs::Leds) -> Result<crate::acs::Leds> {
+        block_on(self.inner.set_leds(leds))
+    }
+
+    /// See [`crate::acs::Acs::ui_behaviour`].
+    pub fn ui_behaviour(&mut self) -> Result<crate::acs::UiBehaviour> {
+        block_on(self.inner.ui_behaviour())
+    }
+
+    /// See [`crate::acs::Acs::set_ui_behaviour`].
+    pub fn set_ui_behaviour(
+        &mut self,
+        ui: crate::acs::UiBehaviour,
+    ) -> Result<crate::acs::UiBehaviour> {
+        block_on(self.inner.set_ui_behaviour(ui))
+    }
+
+    /// See [`crate::acs::Acs::polling_option`].
+    pub fn polling_option(&mut self) -> Result<crate::acs::PollingOption> {
+        block_on(self.inner.polling_option())
+    }
+
+    /// See [`crate::acs::Acs::set_polling_option`].
+    pub fn set_polling_option(
+        &mut self,
+        option: crate::acs::PollingOption,
+    ) -> Result<crate::acs::PollingOption> {
+        block_on(self.inner.set_polling_option(option))
+    }
+
+    /// See [`crate::acs::Acs::set_rf_mode`].
+    pub fn set_rf_mode(&mut self, mode: crate::acs::RfMode) -> Result<()> {
+        block_on(self.inner.set_rf_mode(mode))
+    }
+
+    /// See [`crate::acs::Acs::field_status`].
+    pub fn field_status(&mut self) -> Result<crate::acs::FieldStatus> {
+        block_on(self.inner.field_status())
+    }
+}

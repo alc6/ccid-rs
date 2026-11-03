@@ -33,6 +33,8 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "acs")]
+pub mod acs;
 mod apdu;
 mod atr;
 pub mod blocking;

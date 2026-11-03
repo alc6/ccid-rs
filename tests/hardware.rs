@@ -69,3 +69,28 @@ fn reports_card_events() {
         assert_eq!(second.kind, SlotEventKind::CardRemoved);
     });
 }
+
+#[cfg(feature = "acs")]
+#[test]
+#[ignore = "needs an ACR1552U-family reader"]
+fn acs_commands_answer_and_settings_round_trip() {
+    use ccid::acs::Leds;
+
+    let mut reader = open_first_reader();
+    block_on(async {
+        let mut acs = reader.acs();
+        assert!(!acs.firmware_version().await.unwrap().is_empty());
+        assert!(!acs.serial_number().await.unwrap().is_empty());
+        // LEDs are not saved: switch them, then put them back.
+        let leds = acs.leds().await.unwrap();
+        let both = Leds {
+            blue: true,
+            green: true,
+        };
+        assert_eq!(acs.set_leds(both).await.unwrap(), both);
+        acs.set_leds(leds).await.unwrap();
+        // Writing the current polling option back leaves it unchanged.
+        let option = acs.polling_option().await.unwrap();
+        assert_eq!(acs.set_polling_option(option).await.unwrap(), option);
+    });
+}
