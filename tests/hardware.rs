@@ -1,16 +1,29 @@
 //! Tests against a real reader. They are ignored by default.
 //!
-//! Plug a reader in, put a card on it, then run:
+//! Plug a reader in, then run the tests and follow the prompts (put a card
+//! on the reader, then remove it):
 //!
 //! ```text
-//! cargo test --test hardware -- --ignored --test-threads=1
+//! cargo test --all-features --test hardware -- --ignored --test-threads=1 --nocapture
 //! ```
 //!
 //! They use the first CCID interface found. The reader must not be held by
 //! another driver (see the README for macOS and Linux).
 
-use ccid::{ExchangeLevel, Reader};
+use std::time::Duration;
+
+use ccid::{ExchangeLevel, Reader, SlotEvent, SlotEventKind, SlotEvents};
+use futures_lite::StreamExt;
 use futures_lite::future::block_on;
+
+/// Wait up to 30 s for the next event.
+async fn next_event(events: &mut SlotEvents) -> SlotEvent {
+    let event = futures_lite::future::or(events.next(), async {
+        futures_timer::Delay::new(Duration::from_secs(30)).await;
+        None
+    });
+    event.await.expect("no event within 30 s").expect("event")
+}
 
 fn open_first_reader() -> Reader {
     let info = ccid::list_readers()
@@ -36,7 +49,10 @@ fn opens_an_apdu_level_reader() {
 fn powers_on_and_reads_uid() {
     let mut reader = open_first_reader();
     block_on(async {
-        let mut card = reader.connect(0).await.expect("put a card on the reader");
+        let mut events = reader.events().await.expect("start events");
+        eprintln!("put a card on the reader and leave it there");
+        while next_event(&mut events).await.kind != SlotEventKind::CardPresent {}
+        let mut card = reader.connect(0).await.expect("power on");
         assert!(!card.atr().as_bytes().is_empty());
         let uid = card.get_uid().await.expect("GET DATA UID");
         // ISO 14443 UIDs are 4, 7 or 10 bytes.
@@ -55,25 +71,18 @@ fn powers_on_and_reads_uid() {
 #[test]
 #[ignore = "needs a reader and a person to move a card"]
 fn reports_card_events() {
-    use ccid::{SlotEvent, SlotEventKind};
-    use futures_lite::StreamExt;
-    use std::time::Duration;
-
     let mut reader = open_first_reader();
     block_on(async {
         let mut events = reader.events().await.expect("start events");
-        let mut next = async || -> SlotEvent {
-            let event = futures_lite::future::or(events.next(), async {
-                futures_timer::Delay::new(Duration::from_secs(30)).await;
-                None
-            });
-            event.await.expect("no event within 30 s").expect("event")
-        };
         eprintln!("put a card on the reader (or leave it there), then remove it");
-        let first = next().await;
-        assert_eq!(first.kind, SlotEventKind::CardPresent);
-        let second = next().await;
-        assert_eq!(second.kind, SlotEventKind::CardRemoved);
+        assert_eq!(
+            next_event(&mut events).await.kind,
+            SlotEventKind::CardPresent
+        );
+        assert_eq!(
+            next_event(&mut events).await.kind,
+            SlotEventKind::CardRemoved
+        );
     });
 }
 

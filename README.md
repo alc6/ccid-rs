@@ -234,14 +234,14 @@ interval 250 ms):
 
 ```sh
 cargo test                                               # unit tests, no hardware
-cargo test --all-features --test hardware -- --ignored --test-threads=1
+cargo test --all-features --test hardware -- --ignored --test-threads=1 --nocapture
 ```
 
 Unit tests cover message encoding, the descriptor and ATR parsers, and the
 command sequencing (sequence numbers, time extensions, chaining, timeouts,
 errors) against a fake transport. The hardware tests are ignored by default:
-run them with a reader plugged in and a card on it. One of them asks you to
-remove the card.
+run them with a reader plugged in and follow the prompts (put a card on the
+reader, then remove it). Each prompt waits up to 30 s.
 
 ## Dependencies
 
