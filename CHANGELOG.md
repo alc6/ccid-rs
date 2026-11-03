@@ -11,4 +11,13 @@ project uses [Semantic Versioning](https://semver.org/).
 - List CCID interfaces on the USB bus (`list_readers`).
 - Parse the CCID class descriptor (`CcidDescriptor`), including the exchange level.
 - Open and claim a CCID interface (`Reader::open`, `Reader::open_by_id`).
-- Examples: `probe` (list, open) and `descriptor`.
+- CCID commands: IccPowerOn, IccPowerOff, GetSlotStatus, XfrBlock, Escape and
+  Abort, with sequence checks, time extensions, multi-packet replies and
+  extended APDU chaining.
+- Card helpers: `Reader::connect` → `Card` with `transmit`, `get_uid`
+  (`FF CA 00 00 00`) and `select_aid`.
+- ATR parsing with PC/SC Part 3 card types (`Atr`, `CardType`).
+- Typed errors for unplugged reader, timeout, missing card, card removed and
+  reader slot errors.
+- Blocking wrapper (`ccid::blocking`).
+- Examples: `probe` (list, open, read) and `descriptor`.

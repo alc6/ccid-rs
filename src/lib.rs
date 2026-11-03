@@ -33,10 +33,21 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
+mod apdu;
+mod atr;
+pub mod blocking;
+mod card;
 mod descriptor;
 mod error;
+mod message;
+mod protocol;
 mod reader;
+mod transport;
 
+pub use apdu::{Response, StatusWord};
+pub use atr::{Atr, CardType};
+pub use card::Card;
 pub use descriptor::{CcidDescriptor, ExchangeLevel, Features, Protocols, Voltages};
-pub use error::{Error, Result};
+pub use error::{Error, Result, SlotError};
+pub use message::IccStatus;
 pub use reader::{Reader, ReaderInfo, list_readers};

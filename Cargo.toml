@@ -20,6 +20,8 @@ acs = []
 nusb = "0.2.9"
 thiserror = "2"
 log = "0.4"
+futures-lite = { version = "2", default-features = false, features = ["std"] }
+futures-timer = "3"
 
 [package.metadata.docs.rs]
 all-features = true

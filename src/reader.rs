@@ -1,12 +1,19 @@
 //! Reader discovery and opening.
 
 use std::fmt;
+use std::time::Duration;
 
 use nusb::MaybeFuture;
 use nusb::descriptors::TransferType;
 use nusb::transfer::{Bulk, Direction, In, Out};
 
+use crate::apdu::Response;
+use crate::atr::Atr;
+use crate::card::Card;
 use crate::descriptor::{CCID_DESCRIPTOR_TYPE, CcidDescriptor, ExchangeLevel};
+use crate::message::IccStatus;
+use crate::protocol::Protocol;
+use crate::transport::UsbTransport;
 use crate::{Error, Result};
 
 /// USB interface class of CCID readers.
@@ -151,13 +158,13 @@ impl Layout {
 }
 
 /// An open CCID interface.
+///
+/// Commands run one at a time: every method takes `&mut self`. To share a
+/// reader between tasks, wrap it in your runtime's mutex.
 pub struct Reader {
     info: ReaderInfo,
-    descriptor: CcidDescriptor,
-    interface: nusb::Interface,
-    bulk_out: nusb::Endpoint<Bulk, Out>,
-    bulk_in: nusb::Endpoint<Bulk, In>,
-    interrupt_in: Option<u8>,
+    protocol: Protocol,
+    endpoints: (u8, u8, Option<u8>),
 }
 
 impl Reader {
@@ -188,13 +195,16 @@ impl Reader {
         let interface = device.claim_interface(info.interface).wait()?;
         let bulk_out = interface.endpoint::<Bulk, Out>(layout.bulk_out)?;
         let bulk_in = interface.endpoint::<Bulk, In>(layout.bulk_in)?;
-        Ok(Reader {
-            info: info.clone(),
-            descriptor: layout.descriptor,
+        let transport = UsbTransport::new(
             interface,
             bulk_out,
             bulk_in,
-            interrupt_in: layout.interrupt_in,
+            layout.descriptor.max_message_length,
+        );
+        Ok(Reader {
+            info: info.clone(),
+            protocol: Protocol::new(Box::new(transport), layout.descriptor),
+            endpoints: (layout.bulk_out, layout.bulk_in, layout.interrupt_in),
         })
     }
 
@@ -219,17 +229,68 @@ impl Reader {
 
     /// The CCID class descriptor of this interface.
     pub fn descriptor(&self) -> &CcidDescriptor {
-        &self.descriptor
+        self.protocol.descriptor()
+    }
+
+    /// Time to wait for each reply from the reader. Defaults to 3 seconds.
+    /// A time extension request from the reader restarts the wait.
+    pub fn timeout(&self) -> Duration {
+        self.protocol.timeout
+    }
+
+    /// Set the time to wait for each reply from the reader.
+    pub fn set_timeout(&mut self, timeout: Duration) {
+        self.protocol.timeout = timeout;
+    }
+
+    /// Ask the reader whether a card is in `slot` and powered
+    /// (PC_to_RDR_GetSlotStatus).
+    pub async fn slot_status(&mut self, slot: u8) -> Result<IccStatus> {
+        self.protocol.slot_status(slot).await
+    }
+
+    /// Power the card on and return its ATR (PC_to_RDR_IccPowerOn).
+    ///
+    /// Fails with [`Error::NoCard`] if the slot is empty.
+    pub async fn power_on(&mut self, slot: u8) -> Result<Atr> {
+        self.protocol.power_on(slot).await
+    }
+
+    /// Power the card off (PC_to_RDR_IccPowerOff).
+    pub async fn power_off(&mut self, slot: u8) -> Result<()> {
+        self.protocol.power_off(slot).await
+    }
+
+    /// Send a command APDU to the card and return the response APDU
+    /// (PC_to_RDR_XfrBlock). The card must be powered on.
+    ///
+    /// Fails with [`Error::CardRemoved`] if the card left during the exchange.
+    pub async fn transmit(&mut self, slot: u8, apdu: &[u8]) -> Result<Response> {
+        let raw = self.protocol.transmit(slot, apdu).await?;
+        Response::from_bytes(&raw)
+    }
+
+    /// Send a vendor command to the reader (PC_to_RDR_Escape) and return its
+    /// answer. The meaning of the bytes depends on the reader.
+    pub async fn escape(&mut self, slot: u8, command: &[u8]) -> Result<Vec<u8>> {
+        self.protocol.escape(slot, command).await
+    }
+
+    /// Power the card in `slot` on and return a [`Card`] to talk to it.
+    pub async fn connect(&mut self, slot: u8) -> Result<Card<'_>> {
+        let atr = self.protocol.power_on(slot).await?;
+        Ok(Card::new(&mut self.protocol, slot, atr))
     }
 }
 
 impl fmt::Debug for Reader {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let (bulk_out, bulk_in, interrupt_in) = self.endpoints;
         f.debug_struct("Reader")
-            .field("interface", &self.interface.interface_number())
-            .field("bulk_out", &self.bulk_out.endpoint_address())
-            .field("bulk_in", &self.bulk_in.endpoint_address())
-            .field("interrupt_in", &self.interrupt_in)
+            .field("interface", &self.info.interface)
+            .field("bulk_out", &bulk_out)
+            .field("bulk_in", &bulk_in)
+            .field("interrupt_in", &interrupt_in)
             .finish_non_exhaustive()
     }
 }
