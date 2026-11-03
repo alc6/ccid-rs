@@ -20,4 +20,5 @@ project uses [Semantic Versioning](https://semver.org/).
 - Typed errors for unplugged reader, timeout, missing card, card removed and
   reader slot errors.
 - Blocking wrapper (`ccid::blocking`).
-- Examples: `probe` (list, open, read) and `descriptor`.
+- Examples: `probe` (list, open, read with `--taps` and `--aid`) and
+  `descriptor`.
