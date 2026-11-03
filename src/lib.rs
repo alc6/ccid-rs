@@ -13,19 +13,36 @@
 //! Readers must work at the short APDU or the extended APDU exchange level.
 //! TPDU and character level readers are rejected with [`Error::Unsupported`].
 //!
+//! # Overview
+//!
+//! - [`list_readers`] finds CCID interfaces; [`ReaderInfo::open`] claims one
+//!   and returns a [`Reader`].
+//! - [`Reader::events`] reports cards arriving and leaving.
+//! - [`Reader::connect`] powers a card on and returns a [`Card`], with
+//!   [`Card::transmit`], [`Card::get_uid`] and [`Card::select_aid`].
+//! - [`wait_for_reader`] waits for an unplugged reader to come back.
+//! - [`blocking`] has the same API without async.
+//! - The `acs` feature adds vendor commands for ACS readers (`acs` module).
+//!
+//! The async API works with any executor: nusb and the timer run their own
+//! threads, and the crate does not depend on tokio.
+//!
 //! # Example
 //!
 //! ```no_run
-//! # fn main() -> Result<(), ccid::Error> {
-//! for info in ccid::list_readers()? {
-//!     let descriptor = info.descriptor()?;
-//!     println!(
-//!         "{:04x}:{:04x} interface {}: {:?}",
-//!         info.vendor_id(),
-//!         info.product_id(),
-//!         info.interface_number(),
-//!         descriptor.exchange_level(),
-//!     );
+//! use ccid::SlotEventKind;
+//! use futures_lite::StreamExt;
+//!
+//! # async fn run() -> Result<(), ccid::Error> {
+//! let info = ccid::list_readers()?.into_iter().next().ok_or(ccid::Error::NotFound)?;
+//! let mut reader = info.open()?;
+//! let mut events = reader.events().await?;
+//! while let Some(event) = events.next().await {
+//!     if event?.kind == SlotEventKind::CardPresent {
+//!         let mut card = reader.connect(0).await?;
+//!         let uid = card.get_uid().await?;
+//!         println!("ATR {} UID {uid:02X?}", card.atr());
+//!     }
 //! }
 //! # Ok(())
 //! # }
@@ -42,6 +59,7 @@ mod card;
 mod descriptor;
 mod error;
 mod events;
+mod hotplug;
 mod message;
 mod protocol;
 mod reader;
@@ -53,5 +71,11 @@ pub use card::Card;
 pub use descriptor::{CcidDescriptor, ExchangeLevel, Features, Protocols, Voltages};
 pub use error::{Error, Result, SlotError};
 pub use events::{SlotEvent, SlotEventKind, SlotEvents};
+pub use hotplug::wait_for_reader;
 pub use message::IccStatus;
 pub use reader::{Reader, ReaderInfo, list_readers};
+
+/// Compiles the code examples of the README.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+struct ReadmeDoctests;

@@ -20,6 +20,11 @@ use futures_lite::future::block_on;
 
 use crate::{Atr, CcidDescriptor, IccStatus, ReaderInfo, Response, Result, SlotEvent};
 
+/// Blocking version of [`crate::wait_for_reader`].
+pub fn wait_for_reader(filter: impl FnMut(&ReaderInfo) -> bool) -> Result<ReaderInfo> {
+    block_on(crate::wait_for_reader(filter))
+}
+
 /// Blocking version of [`crate::Reader`].
 #[derive(Debug)]
 pub struct Reader {

@@ -17,6 +17,8 @@
 //! - `--aid HEX|ppse` (read, watch): also SELECT this AID and print the
 //!   status word.
 //! - `--events-only` (watch): only print events, do not talk to the card.
+//! - `--reconnect` (watch): when the reader is unplugged, wait for it to come
+//!   back and go on.
 
 use std::process::ExitCode;
 use std::thread::sleep;
@@ -90,10 +92,18 @@ fn open_reader(options: &Options) -> Result<ccid::blocking::Reader, ccid::Error>
         .into_iter()
         .find(|r| options.matches(r))
         .ok_or(ccid::Error::NotFound)?;
+    open_info(&info)
+}
+
+/// Open `info`, retrying for up to 2 seconds while the OS is not ready:
+/// another driver holds the interface, or permissions are not applied yet.
+fn open_info(info: &ccid::ReaderInfo) -> Result<ccid::blocking::Reader, ccid::Error> {
     let start = Instant::now();
     let reader = loop {
         match info.open() {
-            Err(ccid::Error::Busy) if start.elapsed() < Duration::from_secs(2) => {
+            Err(ccid::Error::Busy | ccid::Error::PermissionDenied)
+                if start.elapsed() < Duration::from_secs(2) =>
+            {
                 sleep(Duration::from_millis(10));
             }
             other => break other?,
@@ -139,6 +149,23 @@ fn read(options: &Options) -> Result<(), ccid::Error> {
 /// Print every card event, and read each card that arrives.
 fn watch(options: &Options) -> Result<(), ccid::Error> {
     let mut reader = open_reader(options)?;
+    loop {
+        let info = reader.info().clone();
+        match watch_events(&mut reader, options) {
+            Err(ccid::Error::Disconnected) if options.reconnect => {
+                drop(reader);
+                println!("{}  reader unplugged, waiting for it", clock());
+                let back = ccid::blocking::wait_for_reader(|r| r.same_interface_as(&info))?;
+                println!("{}  reader is back", clock());
+                reader = open_info(&back)?;
+            }
+            other => return other,
+        }
+    }
+}
+
+/// Print events until the reader goes away.
+fn watch_events(reader: &mut ccid::blocking::Reader, options: &Options) -> Result<(), ccid::Error> {
     let events = reader.events()?;
     println!("watching card events, Ctrl-C to stop");
     let mut arrived = None;
@@ -150,7 +177,7 @@ fn watch(options: &Options) -> Result<(), ccid::Error> {
                 arrived = Some(now);
                 println!("\n{}  slot {}  card arrived", clock(), event.slot);
                 if !options.events_only {
-                    if let Err(e) = read_card(&mut reader, options, Some(now)) {
+                    if let Err(e) = read_card(reader, options, Some(now)) {
                         println!("error    {e}");
                     }
                 }
@@ -261,6 +288,7 @@ struct Options {
     taps: u32,
     aid: Option<Vec<u8>>,
     events_only: bool,
+    reconnect: bool,
 }
 
 impl Options {
@@ -271,6 +299,7 @@ impl Options {
             taps: 1,
             aid: None,
             events_only: false,
+            reconnect: false,
         };
         let mut it = args.iter();
         while let Some(arg) = it.next() {
@@ -286,6 +315,7 @@ impl Options {
                     options.interface = Some(value()?.parse().map_err(|_| "bad interface")?);
                 }
                 "--events-only" => options.events_only = true,
+                "--reconnect" => options.reconnect = true,
                 "--taps" => options.taps = value()?.parse().map_err(|_| "bad tap count")?,
                 "--aid" => {
                     let v = value()?;

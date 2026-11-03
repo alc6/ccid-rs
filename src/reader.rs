@@ -18,7 +18,7 @@ use crate::transport::UsbTransport;
 use crate::{Error, Result};
 
 /// USB interface class of CCID readers.
-const CCID_CLASS: u8 = 0x0B;
+pub(crate) const CCID_CLASS: u8 = 0x0B;
 
 /// List the CCID interfaces on the USB bus.
 ///
@@ -87,6 +87,17 @@ impl ReaderInfo {
     /// Serial number string of the USB device, if the OS cached it.
     pub fn serial_number(&self) -> Option<&str> {
         self.device.serial_number()
+    }
+
+    /// Whether `other` is the same interface of the same reader model and,
+    /// when the reader reports one, the same serial number. Use it to find
+    /// a reader again after it was unplugged; see
+    /// [`wait_for_reader`](crate::wait_for_reader).
+    pub fn same_interface_as(&self, other: &ReaderInfo) -> bool {
+        self.vendor_id() == other.vendor_id()
+            && self.product_id() == other.product_id()
+            && self.interface == other.interface
+            && self.serial_number() == other.serial_number()
     }
 
     /// Read the CCID class descriptor of this interface.
