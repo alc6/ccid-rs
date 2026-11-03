@@ -20,7 +20,7 @@ Not affiliated with Advanced Card Systems Ltd.
   several messages.
 - Typed errors: reader unplugged, timeout, no card, card removed during the
   exchange, reader slot errors, protocol errors, unsupported reader.
-- Wait for an unplugged reader to come back (`wait_for_reader`).
+- Wait for an unplugged reader to come back (`ReaderInfo::wait_for_replug`).
 - Vendor commands for ACS readers behind the `acs` feature: buzzer, LEDs,
   RF field on/off, polling interval, firmware version, serial number.
 - Async API that works with any executor (no tokio dependency), plus a
@@ -133,7 +133,8 @@ things to set up:
 `lsusb -t` shows `Driver=usbfs` on an interface that a user-space program
 holds, and `Driver=[none]` on a free one.
 
-Status: the Linux USB code path has not been run on hardware yet.
+Status: the Linux USB code path has not been run on hardware yet. Unplug
+handling was tested on macOS only.
 
 ## macOS
 
@@ -155,6 +156,11 @@ Measured on macOS 27.2 with SIP enabled:
 sudo killall -9 usbsmartcardreaderd
 cargo run --example probe -- read
 ```
+
+After a replug, launchd starts the daemon again. A program that is already
+waiting with `ReaderInfo::wait_for_replug` and retries `open` can still get
+the interface first (`probe watch --reconnect` did in testing, while the daemon
+took the other two interfaces), but do not rely on it.
 
 Side effects: while the daemon is stopped, macOS has no smart-card support for
 any CCID reader. CryptoTokenKit, PC/SC applications, smart-card login and

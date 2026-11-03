@@ -28,8 +28,10 @@ Builds as a static binary for `aarch64-unknown-linux-musl` and
   reader slot errors.
 - Card events from the interrupt endpoint (`Reader::events` → `SlotEvents`
   stream of `SlotEvent`), starting with the cards already present.
-- Wait for a reader to be plugged in again (`wait_for_reader`,
-  `ReaderInfo::same_interface_as`).
+- Wait for a reader to be plugged in (`wait_for_reader`) or plugged in
+  again after an unplug (`ReaderInfo::wait_for_replug`).
+- On macOS, transfers cut short by an unplug (`kIOReturnNotResponding`)
+  report `Error::Disconnected`.
 - ACS vendor commands behind the `acs` feature (`Reader::acs`): firmware
   version, serial number, buzzer, LEDs, UI behaviour, polling option (RF off
   interval) and RF field mode.
