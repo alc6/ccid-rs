@@ -23,5 +23,9 @@ log = "0.4"
 futures-lite = { version = "2", default-features = false, features = ["std"] }
 futures-timer = "3"
 
+[[example]]
+name = "acs"
+required-features = ["acs"]
+
 [package.metadata.docs.rs]
 all-features = true
