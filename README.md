@@ -8,8 +8,8 @@ can ship as one static binary (for example `aarch64-unknown-linux-musl`).
 
 > **Status: early development.** v0.1 is not released yet. Today the crate can list
 > CCID interfaces, read their class descriptor, report card arrival and removal,
-> power cards on, read the ATR and UID, and exchange APDUs. The ACS vendor module
-> is in progress.
+> power cards on, read the ATR and UID, exchange APDUs, and drive the ACS
+> vendor commands (feature `acs`).
 
 Not affiliated with Advanced Card Systems Ltd.
 
@@ -24,7 +24,8 @@ The core follows public standards only:
 Readers must work at the **short APDU** or **short and extended APDU** exchange
 level. TPDU and character level readers are rejected with `Error::Unsupported`.
 
-Vendor commands live in feature-gated modules (`acs`).
+Vendor commands live in feature-gated modules (`acs`, see
+[ACS vendor commands](#acs-vendor-commands)).
 
 ## Supported readers
 
@@ -34,7 +35,7 @@ Vendor commands live in feature-gated modules (`acs`).
 
 ### ACR1552U card timing
 
-Measured with the default reader settings:
+Measured with the factory polling option (`0x8B`: RF off interval 250 ms):
 
 - From the arrival event, the UID is read in about 5 ms: about 4.5 ms for
   IccPowerOn (which returns the ATR), then about 0.3 ms for GET UID.
@@ -44,6 +45,37 @@ Measured with the default reader settings:
   0.9 s + n × 0.5 s. A card left on the reader stays present.
 - After a removal, the reader detects the next card at the earliest about
   0.5 s later.
+- With the RF off interval set to 1000 ms, these become about 1.6 s for the
+  first presence check and about 1.25 s before the next card is detected.
+- After the field is switched back on (`RfMode::OnWithPolling`), a card
+  already on the reader is reported about 150 ms later.
+
+## ACS vendor commands
+
+The `acs` feature adds `Reader::acs()` for ACR1552U-family readers (tested on
+the WalletMate II, firmware 5.00.14). Byte layouts come from section 6 of the
+[ACR1552U Series Reference Manual v1.09](https://www.acs.com.hk/en/download-manual/13474/REF-ACR1552U-Series-1.09.pdf).
+
+- Firmware version and serial number.
+- Buzzer: one beep of 10 ms to 2.55 s.
+- LEDs (blue, green): read and set.
+- UI behaviour: what the reader does on its own, such as a beep when a card
+  arrives.
+- Polling option: polling on or off, RF off interval (250, 500, 1000 or
+  2500 ms, or none), MIFARE type in the ATR.
+- RF field: off, on with polling, on without polling. Use it to pause polling
+  while a nearby payment terminal works.
+
+The manual says the reader saves the polling option and the UI behaviour, so
+set them once when you set a reader up. The RF field mode and the LEDs are not
+saved settings.
+
+```sh
+cargo run --example acs --features acs                       # show settings
+cargo run --example acs --features acs -- beep 100
+cargo run --example acs --features acs -- rf-off-interval 1000
+cargo run --example acs --features acs -- pause 5            # field off 5 s, then on
+```
 
 ## Examples
 

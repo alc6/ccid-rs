@@ -21,6 +21,10 @@ project uses [Semantic Versioning](https://semver.org/).
   reader slot errors.
 - Card events from the interrupt endpoint (`Reader::events` → `SlotEvents`
   stream of `SlotEvent`), starting with the cards already present.
-- Blocking wrapper (`ccid::blocking`), including an iterator over events.
-- Examples: `probe` (list, open, read, watch) and
+- ACS vendor commands behind the `acs` feature (`Reader::acs`): firmware
+  version, serial number, buzzer, LEDs, UI behaviour, polling option (RF off
+  interval) and RF field mode.
+- Blocking wrapper (`ccid::blocking`), including an iterator over events and
+  the ACS commands.
+- Examples: `probe` (list, open, read, watch), `acs` and
   `descriptor`.
