@@ -19,6 +19,8 @@ project uses [Semantic Versioning](https://semver.org/).
 - ATR parsing with PC/SC Part 3 card types (`Atr`, `CardType`).
 - Typed errors for unplugged reader, timeout, missing card, card removed and
   reader slot errors.
-- Blocking wrapper (`ccid::blocking`).
-- Examples: `probe` (list, open, read with `--taps` and `--aid`) and
+- Card events from the interrupt endpoint (`Reader::events` → `SlotEvents`
+  stream of `SlotEvent`), starting with the cards already present.
+- Blocking wrapper (`ccid::blocking`), including an iterator over events.
+- Examples: `probe` (list, open, read, watch) and
   `descriptor`.

@@ -7,8 +7,9 @@ It does not use PC/SC, pcscd, libccid or any C library, so a program that uses i
 can ship as one static binary (for example `aarch64-unknown-linux-musl`).
 
 > **Status: early development.** v0.1 is not released yet. Today the crate can list
-> CCID interfaces, read their class descriptor, power cards on, read the ATR and
-> UID, and exchange APDUs. Card events and the ACS vendor module are in progress.
+> CCID interfaces, read their class descriptor, report card arrival and removal,
+> power cards on, read the ATR and UID, and exchange APDUs. The ACS vendor module
+> is in progress.
 
 Not affiliated with Advanced Card Systems Ltd.
 
@@ -31,11 +32,25 @@ Vendor commands live in feature-gated modules (`acs`).
 |---|---|---|---|---|
 | ACS ACR1552U-MW (WalletMate II) | `072f:2401` | 0 (contactless) | short and extended APDU | in progress |
 
+### ACR1552U card timing
+
+Measured with the default reader settings:
+
+- The reader activates a card and reports it about 5 ms before the UID can be
+  read (`watch` prints "UID read ~5 ms after the arrival event").
+- It checks that the card is still there about 0.9 s after activation, then
+  about every 0.5 s. A removal is reported at the next check, so a quick tap
+  always shows "removed ~0.9 s after arrival", and later removals show
+  0.9 s + n × 0.5 s. A card left on the reader stays present.
+- After a removal, the reader detects the next card at the earliest about
+  0.5 s later.
+
 ## Examples
 
 ```sh
 cargo run --example probe                          # list CCID interfaces
 cargo run --example probe -- read --taps 3 --aid ppse   # ATR, card type, UID, SELECT
+cargo run --example probe -- watch --aid ppse      # print every arrival and removal
 cargo run --example descriptor                     # dump the CCID class descriptor of each interface
 ```
 
