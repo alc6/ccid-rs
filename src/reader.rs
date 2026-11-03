@@ -5,12 +5,13 @@ use std::time::Duration;
 
 use nusb::MaybeFuture;
 use nusb::descriptors::TransferType;
-use nusb::transfer::{Bulk, Direction, In, Out};
+use nusb::transfer::{Bulk, Direction, In, Interrupt, Out};
 
 use crate::apdu::Response;
 use crate::atr::Atr;
 use crate::card::Card;
 use crate::descriptor::{CCID_DESCRIPTOR_TYPE, CcidDescriptor, ExchangeLevel};
+use crate::events::SlotEvents;
 use crate::message::IccStatus;
 use crate::protocol::Protocol;
 use crate::transport::UsbTransport;
@@ -164,6 +165,8 @@ impl Layout {
 pub struct Reader {
     info: ReaderInfo,
     protocol: Protocol,
+    /// Kept to open the interrupt endpoint for events.
+    interface: nusb::Interface,
     endpoints: (u8, u8, Option<u8>),
 }
 
@@ -196,7 +199,7 @@ impl Reader {
         let bulk_out = interface.endpoint::<Bulk, Out>(layout.bulk_out)?;
         let bulk_in = interface.endpoint::<Bulk, In>(layout.bulk_in)?;
         let transport = UsbTransport::new(
-            interface,
+            interface.clone(),
             bulk_out,
             bulk_in,
             layout.descriptor.max_message_length,
@@ -204,6 +207,7 @@ impl Reader {
         Ok(Reader {
             info: info.clone(),
             protocol: Protocol::new(Box::new(transport), layout.descriptor),
+            interface,
             endpoints: (layout.bulk_out, layout.bulk_in, layout.interrupt_in),
         })
     }
@@ -276,6 +280,42 @@ impl Reader {
         self.protocol.escape(slot, command).await
     }
 
+    /// Start receiving card arrival and removal events.
+    ///
+    /// The reader detects cards itself and reports changes on its interrupt
+    /// endpoint; the host does not poll. The stream first reports the cards
+    /// already present (from one GetSlotStatus per slot), then every change.
+    ///
+    /// Fails with [`Error::Unsupported`] if the interface has no interrupt
+    /// endpoint (for example a SAM slot), and with
+    /// [`Error::InvalidArgument`] if another [`SlotEvents`] of this reader
+    /// is still alive.
+    pub async fn events(&mut self) -> Result<SlotEvents> {
+        let Some(address) = self.endpoints.2 else {
+            return Err(Error::Unsupported(
+                "interface has no interrupt endpoint, so it cannot report card events".into(),
+            ));
+        };
+        let endpoint = self
+            .interface
+            .endpoint::<Interrupt, In>(address)
+            .map_err(|e| match e.kind() {
+                nusb::ErrorKind::Busy => {
+                    Error::InvalidArgument("card events are already being read from this reader")
+                }
+                _ => Error::from(e),
+            })?;
+        // Listen before asking the status, so no change can fall in between.
+        let slots = self.descriptor().slot_count();
+        let mut events = SlotEvents::new(endpoint, slots);
+        let mut present = Vec::with_capacity(slots);
+        for slot in 0..slots {
+            present.push(self.protocol.slot_status(slot as u8).await? != IccStatus::Absent);
+        }
+        events.set_initial(present);
+        Ok(events)
+    }
+
     /// Power the card in `slot` on and return a [`Card`] to talk to it.
     pub async fn connect(&mut self, slot: u8) -> Result<Card<'_>> {
         let atr = self.protocol.power_on(slot).await?;
@@ -308,6 +348,7 @@ mod tests {
             assert_send(reader.slot_status(0));
             assert_send(reader.transmit(0, &[]));
             assert_send(reader.connect(0));
+            assert_send(reader.events());
         }
         fn card(card: &mut Card<'_>) {
             assert_send(card.get_uid());

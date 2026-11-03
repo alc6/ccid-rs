@@ -44,3 +44,28 @@ fn powers_on_and_reads_uid() {
         card.disconnect().await.expect("power off");
     });
 }
+
+#[test]
+#[ignore = "needs a reader and a person to move a card"]
+fn reports_card_events() {
+    use ccid::{SlotEvent, SlotEventKind};
+    use futures_lite::StreamExt;
+    use std::time::Duration;
+
+    let mut reader = open_first_reader();
+    block_on(async {
+        let mut events = reader.events().await.expect("start events");
+        let mut next = async || -> SlotEvent {
+            let event = futures_lite::future::or(events.next(), async {
+                futures_timer::Delay::new(Duration::from_secs(30)).await;
+                None
+            });
+            event.await.expect("no event within 30 s").expect("event")
+        };
+        eprintln!("put a card on the reader (or leave it there), then remove it");
+        let first = next().await;
+        assert_eq!(first.kind, SlotEventKind::CardPresent);
+        let second = next().await;
+        assert_eq!(second.kind, SlotEventKind::CardRemoved);
+    });
+}

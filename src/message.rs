@@ -215,6 +215,56 @@ pub(crate) fn message_len(buf: &[u8]) -> Result<Option<usize>> {
     Ok(Some(len))
 }
 
+/// A message on the interrupt IN pipe (USB CCID 1.1, section 6.3).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum Notification {
+    /// RDR_to_PC_NotifySlotChange: two bits per slot, slot 0 in the low
+    /// bits of the first byte. Bit 0 = card present, bit 1 = changed.
+    SlotChange(Vec<u8>),
+    /// RDR_to_PC_HardwareError.
+    HardwareError { slot: u8, code: u8 },
+}
+
+const NOTIFY_SLOT_CHANGE: u8 = 0x50;
+const HARDWARE_ERROR: u8 = 0x51;
+
+impl Notification {
+    /// `(present, changed)` for `slot` in a SlotChange bitmap.
+    pub(crate) fn slot_bits(bitmap: &[u8], slot: usize) -> (bool, bool) {
+        let bits = bitmap.get(slot / 4).copied().unwrap_or(0) >> ((slot % 4) * 2);
+        (bits & 0x01 != 0, bits & 0x02 != 0)
+    }
+}
+
+/// Split one interrupt transfer into notifications. Anything after the last
+/// message it can decode (such as zero padding) is ignored.
+pub(crate) fn parse_notifications(packet: &[u8], slots: usize) -> Vec<Notification> {
+    let bitmap_len = (2 * slots).div_ceil(8);
+    let mut found = Vec::new();
+    let mut rest = packet;
+    loop {
+        match rest {
+            [NOTIFY_SLOT_CHANGE, tail @ ..] if tail.len() >= bitmap_len => {
+                found.push(Notification::SlotChange(tail[..bitmap_len].to_vec()));
+                rest = &tail[bitmap_len..];
+            }
+            [HARDWARE_ERROR, slot, _seq, code, tail @ ..] => {
+                found.push(Notification::HardwareError {
+                    slot: *slot,
+                    code: *code,
+                });
+                rest = tail;
+            }
+            _ => {
+                if rest.iter().any(|&b| b != 0) {
+                    log::debug!("ignoring interrupt data {rest:02X?}");
+                }
+                return found;
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -282,5 +332,33 @@ mod tests {
         let reply = Reply::decode(&[0x81, 0, 0, 0, 0, 0, 0, 0xC3, 0, 0]).unwrap();
         assert!(reply.icc_status().is_err());
         assert!(reply.command_status().is_err());
+    }
+
+    #[test]
+    fn parses_notifications() {
+        // One slot, card present and changed, padded to 8 bytes.
+        let found = parse_notifications(&[0x50, 0x03, 0, 0, 0, 0, 0, 0], 1);
+        assert_eq!(found, [Notification::SlotChange(vec![0x03])]);
+        // Five slots need two bitmap bytes; slot 4 is in the second byte.
+        let found = parse_notifications(&[0x50, 0x00, 0x03], 5);
+        let Notification::SlotChange(bitmap) = &found[0] else {
+            panic!()
+        };
+        assert_eq!(Notification::slot_bits(bitmap, 4), (true, true));
+        assert_eq!(Notification::slot_bits(bitmap, 0), (false, false));
+        // Hardware error (overcurrent on slot 0) followed by a slot change.
+        let found = parse_notifications(&[0x51, 0x00, 0x07, 0x01, 0x50, 0x02], 1);
+        assert_eq!(
+            found,
+            [
+                Notification::HardwareError {
+                    slot: 0,
+                    code: 0x01
+                },
+                Notification::SlotChange(vec![0x02]),
+            ]
+        );
+        // Truncated message.
+        assert!(parse_notifications(&[0x50], 1).is_empty());
     }
 }

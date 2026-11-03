@@ -15,9 +15,10 @@
 
 use std::time::Duration;
 
+use futures_lite::StreamExt;
 use futures_lite::future::block_on;
 
-use crate::{Atr, CcidDescriptor, IccStatus, ReaderInfo, Response, Result};
+use crate::{Atr, CcidDescriptor, IccStatus, ReaderInfo, Response, Result, SlotEvent};
 
 /// Blocking version of [`crate::Reader`].
 #[derive(Debug)]
@@ -86,6 +87,11 @@ impl Reader {
         block_on(self.inner.escape(slot, command))
     }
 
+    /// See [`crate::Reader::events`].
+    pub fn events(&mut self) -> Result<SlotEvents> {
+        block_on(self.inner.events()).map(|inner| SlotEvents { inner })
+    }
+
     /// See [`crate::Reader::connect`].
     pub fn connect(&mut self, slot: u8) -> Result<Card<'_>> {
         block_on(self.inner.connect(slot)).map(|inner| Card { inner })
@@ -133,5 +139,27 @@ impl Card<'_> {
     /// See [`crate::Card::disconnect`].
     pub fn disconnect(self) -> Result<()> {
         block_on(self.inner.disconnect())
+    }
+}
+
+/// Blocking iterator over [`crate::SlotEvents`].
+#[derive(Debug)]
+pub struct SlotEvents {
+    inner: crate::SlotEvents,
+}
+
+impl SlotEvents {
+    /// The async stream inside.
+    pub fn into_async(self) -> crate::SlotEvents {
+        self.inner
+    }
+}
+
+impl Iterator for SlotEvents {
+    type Item = Result<SlotEvent>;
+
+    /// Wait for the next event. Returns `None` after the reader is unplugged.
+    fn next(&mut self) -> Option<Self::Item> {
+        block_on(self.inner.next())
     }
 }
