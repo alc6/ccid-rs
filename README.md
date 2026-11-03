@@ -36,8 +36,8 @@ Vendor commands live in feature-gated modules (`acs`).
 
 Measured with the default reader settings:
 
-- The reader activates a card and reports it about 5 ms before the UID can be
-  read (`watch` prints "UID read ~5 ms after the arrival event").
+- From the arrival event, the UID is read in about 5 ms: about 4.5 ms for
+  IccPowerOn (which returns the ATR), then about 0.3 ms for GET UID.
 - It checks that the card is still there about 0.9 s after activation, then
   about every 0.5 s. A removal is reported at the next check, so a quick tap
   always shows "removed ~0.9 s after arrival", and later removals show
