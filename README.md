@@ -58,7 +58,9 @@ the WalletMate II, firmware 5.00.14). Byte layouts come from section 6 of the
 
 - Firmware version and serial number.
 - Buzzer: one beep of 10 ms to 2.55 s.
-- LEDs (blue, green): read and set.
+- LEDs (blue, green): read and set. On the WalletMate II both on looks light
+  blue. Its firmware answers the RGB LED command of the ACR1552U-A with `FF`
+  and ignores it, so the crate does not offer it.
 - UI behaviour: what the reader does on its own, such as a beep when a card
   arrives.
 - Polling option: polling on or off, RF off interval (250, 500, 1000 or
