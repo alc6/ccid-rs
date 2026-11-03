@@ -48,7 +48,7 @@ pub fn list_readers() -> Result<Vec<ReaderInfo>> {
 /// A CCID interface found on the USB bus.
 #[derive(Debug, Clone)]
 pub struct ReaderInfo {
-    device: nusb::DeviceInfo,
+    pub(crate) device: nusb::DeviceInfo,
     interface: u8,
     interface_name: Option<String>,
 }
@@ -92,7 +92,7 @@ impl ReaderInfo {
     /// Whether `other` is the same interface of the same reader model and,
     /// when the reader reports one, the same serial number. Use it to find
     /// a reader again after it was unplugged; see
-    /// [`wait_for_reader`](crate::wait_for_reader).
+    /// [`wait_for_replug`](Self::wait_for_replug).
     pub fn same_interface_as(&self, other: &ReaderInfo) -> bool {
         self.vendor_id() == other.vendor_id()
             && self.product_id() == other.product_id()

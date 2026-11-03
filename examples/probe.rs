@@ -155,7 +155,7 @@ fn watch(options: &Options) -> Result<(), ccid::Error> {
             Err(ccid::Error::Disconnected) if options.reconnect => {
                 drop(reader);
                 println!("{}  reader unplugged, waiting for it", clock());
-                let back = ccid::blocking::wait_for_reader(|r| r.same_interface_as(&info))?;
+                let back = ccid::blocking::wait_for_replug(&info)?;
                 println!("{}  reader is back", clock());
                 reader = open_info(&back)?;
             }

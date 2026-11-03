@@ -25,6 +25,11 @@ pub fn wait_for_reader(filter: impl FnMut(&ReaderInfo) -> bool) -> Result<Reader
     block_on(crate::wait_for_reader(filter))
 }
 
+/// Blocking version of [`ReaderInfo::wait_for_replug`].
+pub fn wait_for_replug(info: &ReaderInfo) -> Result<ReaderInfo> {
+    block_on(info.wait_for_replug())
+}
+
 /// Blocking version of [`crate::Reader`].
 #[derive(Debug)]
 pub struct Reader {

@@ -86,10 +86,17 @@ impl From<nusb::Error> for Error {
     }
 }
 
+/// `kIOReturnNotResponding`: macOS fails transfers with this code when the
+/// device is unplugged while they are pending.
+#[cfg(target_os = "macos")]
+const IO_RETURN_NOT_RESPONDING: u32 = 0xE000_02ED;
+
 impl From<nusb::transfer::TransferError> for Error {
     fn from(err: nusb::transfer::TransferError) -> Self {
         match err {
             nusb::transfer::TransferError::Disconnected => Error::Disconnected,
+            #[cfg(target_os = "macos")]
+            nusb::transfer::TransferError::Unknown(IO_RETURN_NOT_RESPONDING) => Error::Disconnected,
             nusb::transfer::TransferError::Cancelled => Error::Timeout,
             _ => Error::Usb(err.into()),
         }
@@ -186,5 +193,26 @@ impl fmt::Display for SlotError {
             SlotError::BadParameter(offset) => write!(f, "bad parameter at offset {offset}"),
             SlotError::Other(code) => write!(f, "error code 0x{code:02x}"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nusb::transfer::TransferError;
+
+    use super::*;
+
+    #[test]
+    fn unplugged_transfers_map_to_disconnected() {
+        assert!(matches!(
+            Error::from(TransferError::Disconnected),
+            Error::Disconnected
+        ));
+        #[cfg(target_os = "macos")]
+        assert!(matches!(
+            Error::from(TransferError::Unknown(0xE000_02ED)),
+            Error::Disconnected
+        ));
+        assert!(matches!(Error::from(TransferError::Stall), Error::Usb(_)));
     }
 }

@@ -3,6 +3,7 @@
 use std::time::{Duration, Instant};
 
 use futures_lite::StreamExt;
+use nusb::MaybeFuture;
 use nusb::hotplug::HotplugEvent;
 
 use crate::reader::CCID_CLASS;
@@ -17,22 +18,9 @@ const SETTLE_STEP: Duration = Duration::from_millis(50);
 /// Wait until a CCID interface for which `filter` returns `true` is on the
 /// bus, and return it. Returns at once if one is already there.
 ///
-/// Use it after [`Error::Disconnected`] to wait for the reader to come
-/// back, then open it again. Opening can fail for a short time right after
-/// the reader appears: on Linux, udev applies permissions a moment later
-/// ([`Error::PermissionDenied`]); on macOS, `usbsmartcardreaderd` claims the
-/// interface ([`Error::Busy`]). Retry [`ReaderInfo::open`] for a second or
-/// two.
-///
-/// ```no_run
-/// # async fn demo(reader: ccid::Reader) -> Result<(), ccid::Error> {
-/// let old = reader.info().clone();
-/// drop(reader);
-/// let info = ccid::wait_for_reader(|r| r.same_interface_as(&old)).await?;
-/// let reader = info.open()?;
-/// # Ok(())
-/// # }
-/// ```
+/// To wait for a reader that was just unplugged, use
+/// [`ReaderInfo::wait_for_replug`] instead: right after the unplug, the OS
+/// can still list the old connection for a short time.
 pub async fn wait_for_reader(mut filter: impl FnMut(&ReaderInfo) -> bool) -> Result<ReaderInfo> {
     // Watch first, then list, so a reader plugged in between is not missed.
     let mut watch = nusb::watch_devices()?;
@@ -59,4 +47,49 @@ pub async fn wait_for_reader(mut filter: impl FnMut(&ReaderInfo) -> bool) -> Res
         }
     }
     Err(Error::NotFound)
+}
+
+impl ReaderInfo {
+    /// Wait until this reader is plugged in again, and return the new
+    /// connection. Call it after a command or the event stream failed with
+    /// [`Error::Disconnected`].
+    ///
+    /// The OS can report the error a little before it removes the device,
+    /// so this first waits up to 2 seconds for the old connection to leave
+    /// the bus. If it does not leave, the reader was not unplugged, and this
+    /// returns it as it is. Otherwise it waits, with no time limit, until the
+    /// same interface of the same reader comes back (see
+    /// [`same_interface_as`](Self::same_interface_as)).
+    ///
+    /// Opening can fail for a short time right after the reader is back: on
+    /// Linux, udev applies permissions a moment later
+    /// ([`Error::PermissionDenied`]); on macOS, `usbsmartcardreaderd` claims
+    /// the interface ([`Error::Busy`]). Retry [`ReaderInfo::open`] for a
+    /// second or two.
+    ///
+    /// ```no_run
+    /// # async fn demo(reader: ccid::Reader) -> Result<(), ccid::Error> {
+    /// let info = reader.info().clone();
+    /// drop(reader);
+    /// let info = info.wait_for_replug().await?;
+    /// let reader = info.open()?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn wait_for_replug(&self) -> Result<ReaderInfo> {
+        let deadline = Instant::now() + SETTLE;
+        while self.is_on_bus()? {
+            if Instant::now() >= deadline {
+                return Ok(self.clone());
+            }
+            futures_timer::Delay::new(SETTLE_STEP).await;
+        }
+        wait_for_reader(|r| r.same_interface_as(self)).await
+    }
+
+    /// Whether this connection of the device is still listed by the OS.
+    fn is_on_bus(&self) -> Result<bool> {
+        let id = self.device.id();
+        Ok(nusb::list_devices().wait()?.any(|d| d.id() == id))
+    }
 }
