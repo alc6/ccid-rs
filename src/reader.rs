@@ -294,3 +294,25 @@ impl fmt::Debug for Reader {
             .finish_non_exhaustive()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The futures must be `Send` so callers can spawn them on a
+    /// multi-threaded runtime. This only has to compile.
+    #[test]
+    fn async_api_is_send() {
+        fn assert_send<T: Send>(_: T) {}
+        fn reader(reader: &mut Reader) {
+            assert_send(reader.slot_status(0));
+            assert_send(reader.transmit(0, &[]));
+            assert_send(reader.connect(0));
+        }
+        fn card(card: &mut Card<'_>) {
+            assert_send(card.get_uid());
+            assert_send(card.select_aid(&[]));
+        }
+        let _ = (reader, card);
+    }
+}
