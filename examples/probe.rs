@@ -5,6 +5,7 @@
 //! cargo run --example probe -- open             # claim the first interface
 //! cargo run --example probe -- read             # power on the card, print ATR and UID
 //! cargo run --example probe -- read --taps 3 --aid ppse
+//! cargo run --example probe -- watch --aid ppse # print every arrival and removal
 //! ```
 //!
 //! Options:
@@ -13,13 +14,17 @@
 //!   the first CCID interface found).
 //! - `--taps N` (read): read N cards in a row. The probe waits for each card
 //!   to arrive and leave by asking the slot status every 20 ms.
-//! - `--aid HEX|ppse` (read): also SELECT this AID and print the status word.
+//! - `--aid HEX|ppse` (read, watch): also SELECT this AID and print the
+//!   status word.
+//! - `--events-only` (watch): only print events, do not talk to the card.
 
 use std::process::ExitCode;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
-use ccid::IccStatus;
+use std::time::{SystemTime, UNIX_EPOCH};
+
+use ccid::{IccStatus, SlotEventKind};
 
 /// `2PAY.SYS.DDF01`, the contactless payment directory.
 const PPSE: &[u8] = b"2PAY.SYS.DDF01";
@@ -41,8 +46,9 @@ fn main() -> ExitCode {
         "list" => list(),
         "open" => open(&options),
         "read" => read(&options),
+        "watch" => watch(&options),
         other => {
-            eprintln!("unknown command {other:?}; expected `list`, `open` or `read`");
+            eprintln!("unknown command {other:?}; expected `list`, `open`, `read` or `watch`");
             return ExitCode::from(2);
         }
     };
@@ -121,7 +127,7 @@ fn read(options: &Options) -> Result<(), ccid::Error> {
             println!("\n[{tap}/{}] put a card on the reader", options.taps);
             wait_for_card(&mut reader, true)?;
         }
-        read_card(&mut reader, options)?;
+        read_card(&mut reader, options, None)?;
         if options.taps > 1 {
             println!("remove the card");
             wait_for_card(&mut reader, false)?;
@@ -130,8 +136,51 @@ fn read(options: &Options) -> Result<(), ccid::Error> {
     Ok(())
 }
 
-/// Power on the card in slot 0 and print what it says.
-fn read_card(reader: &mut ccid::blocking::Reader, options: &Options) -> Result<(), ccid::Error> {
+/// Print every card event, and read each card that arrives.
+fn watch(options: &Options) -> Result<(), ccid::Error> {
+    let mut reader = open_reader(options)?;
+    let events = reader.events()?;
+    println!("watching card events, Ctrl-C to stop");
+    let mut arrived = None;
+    for event in events {
+        let event = event?;
+        let now = Instant::now();
+        match event.kind {
+            SlotEventKind::CardPresent => {
+                arrived = Some(now);
+                println!("\n{}  slot {}  card arrived", clock(), event.slot);
+                if !options.events_only {
+                    if let Err(e) = read_card(&mut reader, options, Some(now)) {
+                        println!("error    {e}");
+                    }
+                }
+            }
+            SlotEventKind::CardRemoved => {
+                let held = arrived.take().map_or(String::new(), |t: Instant| {
+                    format!(", {} after arrival", ms(now - t))
+                });
+                println!("{}  slot {}  card removed{held}", clock(), event.slot);
+            }
+            SlotEventKind::HardwareError(code) => {
+                println!(
+                    "{}  slot {}  hardware error 0x{code:02x}",
+                    clock(),
+                    event.slot
+                );
+            }
+            other => println!("{}  slot {}  {other:?}", clock(), event.slot),
+        }
+    }
+    Ok(())
+}
+
+/// Power on the card in slot 0 and print what it says. `arrival` is when
+/// its arrival event came in, if known.
+fn read_card(
+    reader: &mut ccid::blocking::Reader,
+    options: &Options,
+    arrival: Option<Instant>,
+) -> Result<(), ccid::Error> {
     let start = Instant::now();
     let mut card = reader.connect(0)?;
     let power_on = start.elapsed();
@@ -147,6 +196,12 @@ fn read_card(reader: &mut ccid::blocking::Reader, options: &Options) -> Result<(
         Err(e) => println!("UID      error: {e}"),
     }
     println!("latency  power on {}, UID {}", ms(power_on), ms(uid_time));
+    if let Some(arrival) = arrival {
+        println!(
+            "ready    UID read {} after the arrival event",
+            ms(arrival.elapsed())
+        );
+    }
 
     if let Some(aid) = &options.aid {
         let start = Instant::now();
@@ -180,6 +235,21 @@ fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02X}")).collect()
 }
 
+/// UTC time of day, `HH:MM:SS.mmm`.
+fn clock() -> String {
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default();
+    let day_ms = now.as_millis() % 86_400_000;
+    let (h, m, s, ms) = (
+        day_ms / 3_600_000,
+        day_ms / 60_000 % 60,
+        day_ms / 1000 % 60,
+        day_ms % 1000,
+    );
+    format!("{h:02}:{m:02}:{s:02}.{ms:03}Z")
+}
+
 fn ms(d: Duration) -> String {
     format!("{:.1} ms", d.as_secs_f64() * 1e3)
 }
@@ -190,6 +260,7 @@ struct Options {
     interface: Option<u8>,
     taps: u32,
     aid: Option<Vec<u8>>,
+    events_only: bool,
 }
 
 impl Options {
@@ -199,6 +270,7 @@ impl Options {
             interface: None,
             taps: 1,
             aid: None,
+            events_only: false,
         };
         let mut it = args.iter();
         while let Some(arg) = it.next() {
@@ -213,6 +285,7 @@ impl Options {
                 "--interface" => {
                     options.interface = Some(value()?.parse().map_err(|_| "bad interface")?);
                 }
+                "--events-only" => options.events_only = true,
                 "--taps" => options.taps = value()?.parse().map_err(|_| "bad tap count")?,
                 "--aid" => {
                     let v = value()?;
