@@ -4,17 +4,23 @@
 //! cargo run --example probe              # list CCID interfaces
 //! cargo run --example probe -- open      # open the first interface
 //! cargo run --example probe -- open --reader 072f:2401 --interface 0
+//! cargo run --example probe -- read      # power on the card, print ATR and UID
 //! ```
+//!
+//! `open` and `read` take the same `--reader VID:PID` and `--interface N`
+//! options; by default they use the first CCID interface found.
 
 use std::process::ExitCode;
+use std::time::Instant;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
         None | Some("list") => list(),
         Some("open") => open(&args[1..]),
+        Some("read") => read(&args[1..]),
         Some(other) => {
-            eprintln!("unknown command {other:?}; expected `list` or `open`");
+            eprintln!("unknown command {other:?}; expected `list`, `open` or `read`");
             return ExitCode::from(2);
         }
     };
@@ -46,20 +52,25 @@ fn list() -> Result<(), ccid::Error> {
     Ok(())
 }
 
-fn open(args: &[String]) -> Result<(), ccid::Error> {
+/// Find the reader selected by the options.
+fn select(args: &[String]) -> Result<ccid::ReaderInfo, ccid::Error> {
     let filter = Filter::parse(args);
     let info = ccid::list_readers()?
         .into_iter()
         .find(|r| filter.matches(r))
         .ok_or(ccid::Error::NotFound)?;
     println!(
-        "opening {:04x}:{:04x} interface {} \"{}\"",
+        "reader   {:04x}:{:04x} interface {} \"{}\"",
         info.vendor_id(),
         info.product_id(),
         info.interface_number(),
         info.interface_name().unwrap_or("?"),
     );
-    let reader = info.open()?;
+    Ok(info)
+}
+
+fn open(args: &[String]) -> Result<(), ccid::Error> {
+    let reader = select(args)?.open()?;
     let level = reader
         .descriptor()
         .exchange_level()
@@ -67,6 +78,33 @@ fn open(args: &[String]) -> Result<(), ccid::Error> {
     println!("claimed: {reader:?}");
     println!("exchange level: {level}");
     Ok(())
+}
+
+/// Power on the card in slot 0 and read its ATR and UID.
+fn read(args: &[String]) -> Result<(), ccid::Error> {
+    let mut reader = ccid::blocking::Reader::from(select(args)?.open()?);
+    let start = Instant::now();
+    let mut card = reader.connect(0)?;
+    let powered = start.elapsed();
+    let atr = card.atr().clone();
+    println!("ATR      {atr}");
+    println!("type     {}", atr.card_type());
+    let start = Instant::now();
+    match card.get_uid() {
+        Ok(uid) => println!("UID      {} ({} bytes)", hex(&uid), uid.len()),
+        Err(e) => println!("UID      error: {e}"),
+    }
+    let uid_time = start.elapsed();
+    println!(
+        "latency  power on {:.1} ms, UID {:.1} ms",
+        powered.as_secs_f64() * 1e3,
+        uid_time.as_secs_f64() * 1e3
+    );
+    Ok(())
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02X}")).collect()
 }
 
 /// Reader selection from `--reader VID:PID` and `--interface N`.
