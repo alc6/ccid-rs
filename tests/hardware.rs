@@ -41,6 +41,13 @@ fn powers_on_and_reads_uid() {
         let uid = card.get_uid().await.expect("GET DATA UID");
         // ISO 14443 UIDs are 4, 7 or 10 bytes.
         assert!(matches!(uid.len(), 4 | 7 | 10), "UID length {}", uid.len());
+        // SELECT PPSE: a payment card answers 9000 with an FCI template
+        // (tag 6F); other cards answer "not supported" or "not found".
+        let ppse = card.select_aid(b"2PAY.SYS.DDF01").await.expect("SELECT");
+        match ppse.sw.0 {
+            0x9000 => assert_eq!(ppse.data.first(), Some(&0x6F), "FCI template"),
+            sw => assert!(matches!(sw, 0x6A81 | 0x6A82), "SELECT answered {}", ppse.sw),
+        }
         card.disconnect().await.expect("power off");
     });
 }
