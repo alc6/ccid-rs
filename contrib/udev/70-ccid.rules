@@ -1,0 +1,22 @@
+# udev rule for the ccid crate: let members of the "plugdev" group open USB
+# CCID smart-card readers without root.
+#
+# Install:
+#   sudo cp 70-ccid.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules
+#   sudo udevadm trigger --subsystem-match=usb
+#   sudo usermod -aG plugdev <service-user>     # then log in again
+#
+# Change GROUP to the group your service runs as. On a desktop, you can use
+# TAG+="uaccess" instead of MODE and GROUP to give access to the logged-in
+# user.
+#
+# ID_USB_INTERFACES is set by udev's usb_id builtin (systemd-udevd and eudev),
+# which runs in an earlier rules file, hence the "70-" prefix. BusyBox mdev
+# does not read these rules.
+
+# Any USB device with a CCID interface (class 0x0B, subclass 0, protocol 0).
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ENV{ID_USB_INTERFACES}=="*:0b0000:*", MODE="0660", GROUP="plugdev"
+
+# Or one reader model only, for example the ACS ACR1552U / WalletMate II:
+# SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", ATTR{idVendor}=="072f", ATTR{idProduct}=="2401", MODE="0660", GROUP="plugdev"
