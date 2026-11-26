@@ -211,7 +211,8 @@ find the missing buzzer by a test. Use the USB product ID. For an ACS reader
 that is not in the table, `has_buzzer()` returns `None`. The crate does not
 guess. The table comes from the
 [ACS WalletMate II Mini manual v1.07](https://www.acs.com.hk/en/download-manual/14253/TSP-WalletMate-II-Mini-1.07-EN.pdf).
-The crate has not been tested on the Mini.
+Tested on macOS with a Mini (firmware `ACR1552 W FW 3.02.03`): card reads,
+the settings and the model from the `acs` example.
 
 ```sh
 cargo run --example acs --features acs                       # show settings
