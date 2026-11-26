@@ -31,12 +31,65 @@
 
 use std::time::Duration;
 
-use crate::{Error, Reader, Result};
+use crate::{Error, Reader, ReaderInfo, Result};
 
 impl Reader {
     /// ACS vendor commands. Requires the `acs` feature.
     pub fn acs(&mut self) -> Acs<'_> {
         Acs { reader: self }
+    }
+}
+
+/// USB vendor ID of ACS.
+const ACS_VENDOR_ID: u16 = 0x072F;
+
+/// An ACS reader model, found from its USB product ID.
+///
+/// The models of the ACR1552U family share one firmware. The firmware of a
+/// model without a buzzer still accepts the beep command and the "beep on
+/// arrival" setting and answers OK. A program cannot find out that the
+/// buzzer is missing by a test. Use the USB product ID.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Model {
+    /// ACR1552U-MW "WalletMate II" (`072f:2401`). It has a buzzer.
+    WalletMateII,
+    /// ACM1552U-ZW "WalletMate II Mini" (`072f:2307`). It has no buzzer.
+    WalletMateIIMini,
+    /// An ACS reader this crate does not know. The value is the USB
+    /// product ID.
+    Unknown(u16),
+}
+
+impl Model {
+    /// The model for these USB IDs. `None` when the vendor is not ACS.
+    pub fn from_usb_ids(vendor_id: u16, product_id: u16) -> Option<Model> {
+        if vendor_id != ACS_VENDOR_ID {
+            return None;
+        }
+        Some(match product_id {
+            0x2401 => Model::WalletMateII,
+            0x2307 => Model::WalletMateIIMini,
+            other => Model::Unknown(other),
+        })
+    }
+
+    /// Whether the reader has a buzzer. `None` for an unknown model: the
+    /// crate does not guess.
+    pub fn has_buzzer(self) -> Option<bool> {
+        match self {
+            Model::WalletMateII => Some(true),
+            Model::WalletMateIIMini => Some(false),
+            Model::Unknown(_) => None,
+        }
+    }
+}
+
+impl ReaderInfo {
+    /// The ACS model of this reader. `None` when the vendor is not ACS.
+    /// Requires the `acs` feature.
+    pub fn acs_model(&self) -> Option<Model> {
+        Model::from_usb_ids(self.vendor_id(), self.product_id())
     }
 }
 
@@ -405,5 +458,28 @@ mod tests {
             }),
             0x02
         );
+    }
+
+    #[test]
+    fn finds_the_model_from_usb_ids() {
+        assert_eq!(
+            Model::from_usb_ids(0x072F, 0x2401),
+            Some(Model::WalletMateII)
+        );
+        assert_eq!(
+            Model::from_usb_ids(0x072F, 0x2307),
+            Some(Model::WalletMateIIMini)
+        );
+        // An ACS reader that is not in the table.
+        assert_eq!(
+            Model::from_usb_ids(0x072F, 0x1234),
+            Some(Model::Unknown(0x1234))
+        );
+        // Same product ID, other vendor.
+        assert_eq!(Model::from_usb_ids(0x04E6, 0x2401), None);
+
+        assert_eq!(Model::WalletMateII.has_buzzer(), Some(true));
+        assert_eq!(Model::WalletMateIIMini.has_buzzer(), Some(false));
+        assert_eq!(Model::Unknown(0x1234).has_buzzer(), None);
     }
 }

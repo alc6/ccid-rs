@@ -44,6 +44,20 @@ fn run(args: &[&str]) -> Result<(), Box<dyn std::error::Error>> {
     let mut acs = reader.acs();
     match args {
         [] | ["info"] => {
+            println!(
+                "USB IDs          {:04x}:{:04x}",
+                info.vendor_id(),
+                info.product_id()
+            );
+            println!("model            {:?}", info.acs_model());
+            println!(
+                "buzzer           {}",
+                match info.acs_model().and_then(|m| m.has_buzzer()) {
+                    Some(true) => "yes",
+                    Some(false) => "no (the beep command still answers OK)",
+                    None => "unknown",
+                }
+            );
             println!("firmware         {}", acs.firmware_version()?);
             println!("serial number    {}", acs.serial_number()?);
             println!("LEDs             {:?}", acs.leds()?);
