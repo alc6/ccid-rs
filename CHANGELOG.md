@@ -6,6 +6,12 @@ project uses [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `acs::Model` with `from_usb_ids` and `has_buzzer`, and
+  `ReaderInfo::acs_model`, to tell the WalletMate II (buzzer) from the
+  WalletMate II Mini (no buzzer). The `acs` example prints them.
+
 ## [0.1.0] - 2026-11-03
 
 First release. Tested on macOS with an ACS WalletMate II (ACR1552U family).

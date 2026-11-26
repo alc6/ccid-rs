@@ -194,6 +194,25 @@ The manual says the reader saves the polling option and the UI behaviour, so
 set them once when you set a reader up. The RF field mode and the LEDs are not
 saved settings.
 
+### Reader models
+
+`ccid::acs::Model` names the ACS models this crate knows. Get it with
+`ReaderInfo::acs_model()` or `Model::from_usb_ids(vendor_id, product_id)`.
+`Model::has_buzzer()` tells if the reader has a buzzer.
+
+| Model | VID:PID | Buzzer |
+|---|---|---|
+| ACR1552U-MW (WalletMate II) | `072f:2401` | yes |
+| ACM1552U-ZW (WalletMate II Mini) | `072f:2307` | no |
+
+The WalletMate II Mini has no buzzer. Its firmware still accepts the beep
+command and the "beep on arrival" setting and answers OK. A program cannot
+find the missing buzzer by a test. Use the USB product ID. For an ACS reader
+that is not in the table, `has_buzzer()` returns `None`. The crate does not
+guess. The table comes from the
+[ACS WalletMate II Mini manual v1.07](https://www.acs.com.hk/en/download-manual/14253/TSP-WalletMate-II-Mini-1.07-EN.pdf).
+The crate has not been tested on the Mini.
+
 ```sh
 cargo run --example acs --features acs                       # show settings
 cargo run --example acs --features acs -- beep 100
